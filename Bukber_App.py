@@ -118,7 +118,8 @@ menu_minuman = {
     "Lemonade":10000,
     "Teh Hangat":7000,
     "Air Mineral":7000,
-    "Air Es / Hangat":3000     # <<< tambahan baru
+    "Air Es / Hangat":3000,       # <<< tambahan lama
+    "Teh Es / Hangat":7000        # <<< tambahan baru
 }
 
 # =========================
