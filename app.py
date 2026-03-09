@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -19,10 +20,10 @@ FILE = "rekap_pesanan.xlsx"
 # =========================
 if "cart" not in st.session_state:
     st.session_state.cart = {}  # keyed by Nama
-
-# Flag rerun untuk Streamlit terbaru
-if "__rerun__" not in st.session_state:
-    st.session_state["__rerun__"] = False
+if "refresh" not in st.session_state:
+    st.session_state.refresh = False
+if "hapus_clicked" not in st.session_state:
+    st.session_state.hapus_clicked = None
 
 # =========================
 # DATA MENU
@@ -209,21 +210,6 @@ if st.button("➕ Tambah Pesanan"):
             tambah(nampan, qty_nampan, menu_nampan_keluarga)
         if nampan in menu_nampan_jumbo:
             tambah(nampan, qty_nampan, menu_nampan_jumbo)
-        
-        # ===== Simpan ke Excel agar terlihat semua orang =====
-        rows_save=[]
-        for n,items in st.session_state.cart.items():
-            for i in items:
-                rows_save.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
-        df_save = pd.concat([pd.read_excel(FILE, engine='openpyxl') if os.path.exists(FILE) else pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"]),
-                             pd.DataFrame(rows_save)], ignore_index=True)
-        df_save = df_save.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
-        df_save.to_excel(FILE,index=False,engine="openpyxl")
-
-        # ===== Perbaikan experimental_rerun =====
-        st.session_state["__rerun__"] = not st.session_state.get("__rerun__", False)
-        st.experimental_rerun = lambda: None
-
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
 # =========================
@@ -239,7 +225,15 @@ def get_rekap_df():
 # LIVE REKAP 1 TABEL PER PEMESAN
 # =========================
 st.subheader("🧾 Rekap Pesanan Live")
-df_live = get_rekap_df()
+df_file = get_rekap_df()
+rows_cart=[]
+for n,items in st.session_state.cart.items():
+    for i in items:
+        rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+
+df_cart = pd.DataFrame(rows_cart)
+df_live = pd.concat([df_file, df_cart], ignore_index=True)
+df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
 
 if not df_live.empty:
     df_grouped = df_live.groupby("Nama").apply(
@@ -249,27 +243,30 @@ if not df_live.empty:
         })
     ).reset_index()
 
-    # Tombol Hapus Pemesan
-    hapus_list = []
-    for idx,row in df_grouped.iterrows():
-        col1, col2 = st.columns([10,1])
-        with col1:
-            st.markdown(f"**{row['Nama']}** | {row['Pesanan']} = Total Rp {row['Total']:,.0f}")
-        with col2:
-            if st.button("🗑️ Hapus Pemesan", key=f"hapus_{row['Nama']}"):
-                hapus_list.append(row['Nama'])
+# =========================
+# PERBAIKI TOMBOL HAPUS
+# =========================
+for idx,row in df_grouped.iterrows():
+    col1, col2 = st.columns([10,1])
+    with col1:
+        st.markdown(f"**{row['Nama']}** | {row['Pesanan']} = Total Rp {row['Total']:,.0f}")
+    with col2:
+        if st.button("🗑️ Hapus Pemesan", key=f"hapus_{row['Nama']}"):
+            st.session_state.hapus_clicked = row['Nama']
 
-    for nama_hapus in hapus_list:
-        df_live = df_live[df_live["Nama"] != nama_hapus]
-        if nama_hapus in st.session_state.cart:
-            del st.session_state.cart[nama_hapus]
-        df_live.to_excel(FILE,index=False,engine="openpyxl")
-        # Perbaikan experimental_rerun
-        st.session_state["__rerun__"] = not st.session_state.get("__rerun__", False)
-        st.experimental_rerun = lambda: None
+if st.session_state.hapus_clicked:
+    nama_hapus = st.session_state.hapus_clicked
+    df_live = df_live[df_live["Nama"] != nama_hapus]
+    if nama_hapus in st.session_state.cart:
+        del st.session_state.cart[nama_hapus]
+    df_live.to_excel(FILE,index=False,engine="openpyxl")
+    st.session_state.hapus_clicked = None
+    st_autorefresh(interval=1, key=f"rerun_once_{nama_hapus}")
 
-else:
-    st.info("Belum ada pesanan.")
+# =========================
+# AUTO REFRESH LIVE REKAP
+# =========================
+st_autorefresh(interval=5000, key="live_rekap_refresh")
 
 # =========================
 # TOMBOL DOWNLOAD EXCEL
