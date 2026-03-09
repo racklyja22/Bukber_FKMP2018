@@ -213,6 +213,20 @@ def tambah(menu, qty, daftar):
                 "Harga": harga,
                 "Total": total
             }]
+        # Simpan ke Excel agar live rekap persist
+        simpan_semua_ke_excel()
+
+# =========================
+# SIMPAN SEMUA PESANAN KE EXCEL
+# =========================
+def simpan_semua_ke_excel():
+    rows_cart=[]
+    for n,items in st.session_state.cart.items():
+        for i in items:
+            rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+    df_to_save = pd.DataFrame(rows_cart)
+    df_to_save.to_excel(FILE,index=False,engine="openpyxl")
+    st.session_state.df_live = df_to_save.copy()
 
 # =========================
 # TOMBOL TAMBAH PESANAN
@@ -234,34 +248,20 @@ if st.button("➕ Tambah Pesanan"):
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
 # =========================
-# FUNGSI LOAD FILE
+# LOAD REKAP LIVE DARI SESSION STATE
 # =========================
-def get_rekap_df():
+if "df_live" not in st.session_state:
     if os.path.exists(FILE):
-        return pd.read_excel(FILE, engine='openpyxl')
+        st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
     else:
-        return pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
+        st.session_state.df_live = pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
 
-df_file = get_rekap_df()
-
-# =========================
-# GABUNG DATA CART + FILE
-# =========================
-rows_cart=[]
-for n,items in st.session_state.cart.items():
-    for i in items:
-        rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
-
-df_cart = pd.DataFrame(rows_cart)
-df_live = pd.concat([df_file, df_cart], ignore_index=True)
-df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
-st.session_state.df_live = df_live
+df_live = st.session_state.df_live
 
 # =========================
 # LIVE REKAP 1 TABEL PER PEMESAN
 # =========================
 st.subheader("🧾 Rekap Pesanan Live")
-df_live = st.session_state.df_live
 if not df_live.empty:
     df_grouped = df_live.groupby("Nama").apply(
         lambda x: pd.Series({
@@ -280,10 +280,11 @@ if not df_live.empty:
                 hapus_list.append(row['Nama'])
 
     for nama_hapus in hapus_list:
-        df_live = df_live[df_live["Nama"] != nama_hapus]
         if nama_hapus in st.session_state.cart:
             del st.session_state.cart[nama_hapus]
+        df_live = df_live[df_live["Nama"] != nama_hapus]
         st.session_state.df_live = df_live
+        # update Excel
         df_live.to_excel(FILE,index=False,engine="openpyxl")
 
 else:
@@ -295,7 +296,6 @@ else:
 st.subheader("⬇️ Download Rekap Pesanan")
 if not st.session_state.df_live.empty:
     buffer = io.BytesIO()
-    # Ambil data dari Live Rekap
     df_to_download = st.session_state.df_live.copy()
     df_to_download.to_excel(buffer,index=False,engine="openpyxl")
     buffer.seek(0)
