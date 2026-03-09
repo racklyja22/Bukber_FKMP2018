@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-from streamlit_autorefresh import st_autorefresh  # <<< tambahan fix auto-refresh
+from streamlit_autorefresh import st_autorefresh  # tambahan fix auto-refresh
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -13,7 +13,7 @@ st.set_page_config(
 # =========================
 # AUTO REFRESH (10 detik)
 # =========================
-st_autorefresh(interval=10000, key="live_rekap_refresh")  # <<< tambahan fix auto-refresh
+st_autorefresh(interval=10000, key="live_rekap_refresh")
 
 st.title("🍽️ BUKBER FKMP 2018")
 st.write("Silakan pilih menu yang ingin dipesan")
@@ -27,6 +27,12 @@ if "cart" not in st.session_state:
     st.session_state.cart = {}  # keyed by Nama
 if "refresh" not in st.session_state:
     st.session_state.refresh = False
+if "df_live" not in st.session_state:
+    # load file jika ada
+    if os.path.exists(FILE):
+        st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
+    else:
+        st.session_state.df_live = pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
 
 # =========================
 # DATA MENU
@@ -117,9 +123,9 @@ menu_minuman = {
     "Black Coffee":10000,
     "Lemonade":10000,
     "Teh Hangat":7000,
+    "Teh Es":7000,        # tambahan menu
     "Air Mineral":7000,
-    "Air Es / Hangat":3000,       # <<< tambahan lama
-    "Teh Es / Hangat":7000        # <<< tambahan baru
+    "Air Es / Hangat":3000  # tambahan menu
 }
 
 # =========================
@@ -218,34 +224,20 @@ if st.button("➕ Tambah Pesanan"):
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
 # =========================
-# FUNGSI LOAD FILE
+# LIVE REKAP
 # =========================
-def get_rekap_df():
-    if os.path.exists(FILE):
-        return pd.read_excel(FILE, engine='openpyxl')
-    else:
-        return pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
-
-df_file = get_rekap_df()
-
-# =========================
-# GABUNG DATA CART + FILE
-# =========================
-rows_cart=[]
-for n,items in st.session_state.cart.items():
+df_live = pd.DataFrame()
+for n, items in st.session_state.cart.items():
     for i in items:
-        rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+        df_live = pd.concat([df_live, pd.DataFrame([{"Nama": n, "Menu": i["Menu"], "Jumlah": i["Jumlah"], "Harga": i["Harga"], "Total": i["Total"]}])], ignore_index=True)
 
-df_cart = pd.DataFrame(rows_cart)
-df_live = pd.concat([df_file, df_cart], ignore_index=True)
-df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
+# gabung file sebelumnya
+df_file = st.session_state.df_live
+df_live = pd.concat([df_file, df_live], ignore_index=True)
+df_live = df_live.groupby(["Nama", "Menu", "Harga"], as_index=False).agg({"Jumlah": "sum", "Total": "sum"})
 st.session_state.df_live = df_live
 
-# =========================
-# LIVE REKAP 1 TABEL PER PEMESAN
-# =========================
 st.subheader("🧾 Rekap Pesanan Live")
-df_live = st.session_state.df_live
 if not df_live.empty:
     df_grouped = df_live.groupby("Nama").apply(
         lambda x: pd.Series({
@@ -268,19 +260,18 @@ if not df_live.empty:
         if nama_hapus in st.session_state.cart:
             del st.session_state.cart[nama_hapus]
         st.session_state.df_live = df_live
-        df_live.to_excel(FILE,index=False,engine="openpyxl")
-
+        df_live.to_excel(FILE, index=False, engine="openpyxl")
 else:
     st.info("Belum ada pesanan.")
 
 # =========================
-# TOMBOL DOWNLOAD EXCEL
+# DOWNLOAD EXCEL SESUAI LIVE REKAP
 # =========================
 st.subheader("⬇️ Download Rekap Pesanan")
-df_live = st.session_state.df_live  # pastikan pakai df_live live
+df_live = st.session_state.df_live
 if not df_live.empty:
     buffer = io.BytesIO()
-    df_live.to_excel(buffer, index=False, engine="openpyxl")  # pakai df_live
+    df_live.to_excel(buffer, index=False, engine="openpyxl")
     buffer.seek(0)
     st.download_button(
         label="⬇️ Download Pesanan (.xlsx)",
