@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-from streamlit_autorefresh import st_autorefresh  # auto-refresh fix
+from streamlit_autorefresh import st_autorefresh
+from filelock import FileLock  # untuk aman multi-user saat tulis Excel
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -19,28 +20,42 @@ st.title("🍽️ BUKBER FKMP 2018")
 st.write("Silakan pilih menu yang ingin dipesan")
 
 FILE = "rekap_pesanan.xlsx"
+LOCK_FILE = "rekap_pesanan.lock"
+
+# =========================
+# SESSION FLAG UNTUK SAFE RERUN
+# =========================
+if st.session_state.get('refresh_after_delete', False):
+    st.session_state['refresh_after_delete'] = False
+    st.experimental_rerun()
 
 # =========================
 # SESSION CART
 # =========================
 if "cart" not in st.session_state:
-    st.session_state.cart = {}  # keyed by Nama
+    st.session_state.cart = {}
 
 # =========================
 # LOAD PESANAN LAMA DARI EXCEL KE SESSION_STATE CART
 # =========================
-if os.path.exists(FILE) and not st.session_state.cart:
-    df_existing = pd.read_excel(FILE, engine='openpyxl')
-    for idx, row in df_existing.iterrows():
-        nama_existing = row["Nama"]
-        if nama_existing not in st.session_state.cart:
-            st.session_state.cart[nama_existing] = []
-        st.session_state.cart[nama_existing].append({
-            "Menu": row["Menu"],
-            "Jumlah": row["Jumlah"],
-            "Harga": row["Harga"],
-            "Total": row["Total"]
-        })
+def load_existing_orders():
+    if os.path.exists(FILE):
+        with FileLock(LOCK_FILE):
+            df_existing = pd.read_excel(FILE, engine='openpyxl')
+        temp_cart = {}
+        for idx, row in df_existing.iterrows():
+            nama_existing = row["Nama"]
+            if nama_existing not in temp_cart:
+                temp_cart[nama_existing] = []
+            temp_cart[nama_existing].append({
+                "Menu": row["Menu"],
+                "Jumlah": row["Jumlah"],
+                "Harga": row["Harga"],
+                "Total": row["Total"]
+            })
+        return temp_cart
+    else:
+        return {}
 
 # =========================
 # DATA MENU
@@ -191,6 +206,8 @@ def tambah(menu, qty, daftar):
     if menu != "-" and qty > 0 and nama.strip():
         harga = daftar[menu]
         total = harga * qty
+        # load latest cart from Excel sebelum update
+        st.session_state.cart = load_existing_orders()
         if nama in st.session_state.cart:
             updated = False
             for item in st.session_state.cart[nama]:
@@ -213,20 +230,14 @@ def tambah(menu, qty, daftar):
                 "Harga": harga,
                 "Total": total
             }]
-        # Simpan ke Excel agar live rekap persist
-        simpan_semua_ke_excel()
-
-# =========================
-# SIMPAN SEMUA PESANAN KE EXCEL
-# =========================
-def simpan_semua_ke_excel():
-    rows_cart=[]
-    for n,items in st.session_state.cart.items():
-        for i in items:
-            rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
-    df_to_save = pd.DataFrame(rows_cart)
-    df_to_save.to_excel(FILE,index=False,engine="openpyxl")
-    st.session_state.df_live = df_to_save.copy()
+        # tulis ke Excel dengan lock untuk multi-user
+        rows_cart=[]
+        for n,items in st.session_state.cart.items():
+            for i in items:
+                rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+        df_live = pd.DataFrame(rows_cart)
+        with FileLock(LOCK_FILE):
+            df_live.to_excel(FILE,index=False,engine="openpyxl")
 
 # =========================
 # TOMBOL TAMBAH PESANAN
@@ -248,15 +259,16 @@ if st.button("➕ Tambah Pesanan"):
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
 # =========================
-# LOAD REKAP LIVE DARI SESSION STATE
+# FUNGSI LOAD LIVE REKAP
 # =========================
-if "df_live" not in st.session_state:
+def load_live_rekap():
     if os.path.exists(FILE):
-        st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
+        with FileLock(LOCK_FILE):
+            return pd.read_excel(FILE, engine='openpyxl')
     else:
-        st.session_state.df_live = pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
+        return pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
 
-df_live = st.session_state.df_live
+df_live = load_live_rekap()
 
 # =========================
 # LIVE REKAP 1 TABEL PER PEMESAN
@@ -279,25 +291,23 @@ if not df_live.empty:
             if st.button("🗑️ Hapus Pemesan", key=f"hapus_{row['Nama']}"):
                 hapus_list.append(row['Nama'])
 
-    for nama_hapus in hapus_list:
-        if nama_hapus in st.session_state.cart:
-            del st.session_state.cart[nama_hapus]
-        df_live = df_live[df_live["Nama"] != nama_hapus]
-        st.session_state.df_live = df_live
-        # update Excel
-        df_live.to_excel(FILE,index=False,engine="openpyxl")
+    if hapus_list:
+        for nama_hapus in hapus_list:
+            df_live = df_live[df_live["Nama"] != nama_hapus]
+        with FileLock(LOCK_FILE):
+            df_live.to_excel(FILE,index=False,engine="openpyxl")
+        st.session_state['refresh_after_delete'] = True  # aman untuk rerun
 
 else:
     st.info("Belum ada pesanan.")
 
 # =========================
-# TOMBOL DOWNLOAD EXCEL (Dari Live Rekap)
+# TOMBOL DOWNLOAD EXCEL
 # =========================
 st.subheader("⬇️ Download Rekap Pesanan")
-if not st.session_state.df_live.empty:
+if not df_live.empty:
     buffer = io.BytesIO()
-    df_to_download = st.session_state.df_live.copy()
-    df_to_download.to_excel(buffer,index=False,engine="openpyxl")
+    df_live.to_excel(buffer,index=False,engine="openpyxl")
     buffer.seek(0)
     st.download_button(
         label="⬇️ Download Pesanan (.xlsx)",
