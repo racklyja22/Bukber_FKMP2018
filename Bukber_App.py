@@ -117,7 +117,8 @@ menu_minuman = {
     "Black Coffee":10000,
     "Lemonade":10000,
     "Teh Hangat":7000,
-    "Air Mineral":7000
+    "Air Mineral":7000,
+    "Air Es / Hangat":3000     # <<< tambahan baru
 }
 
 # =========================
