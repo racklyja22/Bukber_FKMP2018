@@ -277,9 +277,10 @@ else:
 # TOMBOL DOWNLOAD EXCEL
 # =========================
 st.subheader("⬇️ Download Rekap Pesanan")
+df_live = st.session_state.df_live  # pastikan pakai df_live live
 if not df_live.empty:
     buffer = io.BytesIO()
-    df_live.to_excel(buffer,index=False,engine="openpyxl")
+    df_live.to_excel(buffer, index=False, engine="openpyxl")  # pakai df_live
     buffer.seek(0)
     st.download_button(
         label="⬇️ Download Pesanan (.xlsx)",
