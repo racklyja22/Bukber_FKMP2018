@@ -21,10 +21,11 @@ st.write("Silakan pilih menu yang ingin dipesan")
 FILE = "rekap_pesanan.xlsx"
 
 # =========================
-# SESSION CART
+# SESSION CART & LOAD LIVE REKAP
 # =========================
 if "cart" not in st.session_state:
     st.session_state.cart = {}
+
 if "df_live" not in st.session_state:
     if os.path.exists(FILE):
         st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
