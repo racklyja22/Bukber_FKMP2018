@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-from streamlit_autorefresh import st_autorefresh  # tambahan fix auto-refresh
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -24,11 +24,8 @@ FILE = "rekap_pesanan.xlsx"
 # SESSION CART
 # =========================
 if "cart" not in st.session_state:
-    st.session_state.cart = {}  # keyed by Nama
-if "refresh" not in st.session_state:
-    st.session_state.refresh = False
+    st.session_state.cart = {}
 if "df_live" not in st.session_state:
-    # load file jika ada
     if os.path.exists(FILE):
         st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
     else:
@@ -101,7 +98,9 @@ menu_tambahan = {
     "Ekstra Kangkung Goreng":5000,
     "Ekstra Sambal":3000,
     "Ekstra Kerupuk":3000,
-    "Ekstra Acar":3000
+    "Ekstra Acar":3000,
+    "Air Es / Hangat":3000,
+    "Teh Es / Hangat":7000
 }
 
 menu_minuman = {
@@ -123,9 +122,7 @@ menu_minuman = {
     "Black Coffee":10000,
     "Lemonade":10000,
     "Teh Hangat":7000,
-    "Teh Es":7000,        # tambahan menu
-    "Air Mineral":7000,
-    "Air Es / Hangat":3000  # tambahan menu
+    "Air Mineral":7000
 }
 
 # =========================
@@ -223,21 +220,21 @@ if st.button("➕ Tambah Pesanan"):
             tambah(nampan, qty_nampan, menu_nampan_jumbo)
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
-# =========================
-# LIVE REKAP
-# =========================
-df_live = pd.DataFrame()
-for n, items in st.session_state.cart.items():
-    for i in items:
-        df_live = pd.concat([df_live, pd.DataFrame([{"Nama": n, "Menu": i["Menu"], "Jumlah": i["Jumlah"], "Harga": i["Harga"], "Total": i["Total"]}])], ignore_index=True)
+        # Simpan live rekap ke Excel
+        rows_cart=[]
+        for n,items in st.session_state.cart.items():
+            for i in items:
+                rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+        df_live = pd.DataFrame(rows_cart)
+        df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
+        st.session_state.df_live = df_live
+        df_live.to_excel(FILE,index=False,engine="openpyxl")
 
-# gabung file sebelumnya
-df_file = st.session_state.df_live
-df_live = pd.concat([df_file, df_live], ignore_index=True)
-df_live = df_live.groupby(["Nama", "Menu", "Harga"], as_index=False).agg({"Jumlah": "sum", "Total": "sum"})
-st.session_state.df_live = df_live
-
+# =========================
+# LIVE REKAP 1 TABEL PER PEMESAN
+# =========================
 st.subheader("🧾 Rekap Pesanan Live")
+df_live = st.session_state.df_live
 if not df_live.empty:
     df_grouped = df_live.groupby("Nama").apply(
         lambda x: pd.Series({
@@ -260,18 +257,17 @@ if not df_live.empty:
         if nama_hapus in st.session_state.cart:
             del st.session_state.cart[nama_hapus]
         st.session_state.df_live = df_live
-        df_live.to_excel(FILE, index=False, engine="openpyxl")
+        df_live.to_excel(FILE,index=False,engine="openpyxl")
 else:
     st.info("Belum ada pesanan.")
 
 # =========================
-# DOWNLOAD EXCEL SESUAI LIVE REKAP
+# TOMBOL DOWNLOAD EXCEL
 # =========================
 st.subheader("⬇️ Download Rekap Pesanan")
-df_live = st.session_state.df_live
 if not df_live.empty:
     buffer = io.BytesIO()
-    df_live.to_excel(buffer, index=False, engine="openpyxl")
+    df_live.to_excel(buffer,index=False,engine="openpyxl")
     buffer.seek(0)
     st.download_button(
         label="⬇️ Download Pesanan (.xlsx)",
