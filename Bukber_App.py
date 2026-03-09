@@ -21,16 +21,26 @@ st.write("Silakan pilih menu yang ingin dipesan")
 FILE = "rekap_pesanan.xlsx"
 
 # =========================
-# SESSION CART & LOAD LIVE REKAP
+# SESSION CART
 # =========================
 if "cart" not in st.session_state:
-    st.session_state.cart = {}
+    st.session_state.cart = {}  # keyed by Nama
 
-if "df_live" not in st.session_state:
-    if os.path.exists(FILE):
-        st.session_state.df_live = pd.read_excel(FILE, engine='openpyxl')
-    else:
-        st.session_state.df_live = pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
+# =========================
+# LOAD PESANAN LAMA DARI EXCEL KE SESSION_STATE CART
+# =========================
+if os.path.exists(FILE) and not st.session_state.cart:
+    df_existing = pd.read_excel(FILE, engine='openpyxl')
+    for idx, row in df_existing.iterrows():
+        nama_existing = row["Nama"]
+        if nama_existing not in st.session_state.cart:
+            st.session_state.cart[nama_existing] = []
+        st.session_state.cart[nama_existing].append({
+            "Menu": row["Menu"],
+            "Jumlah": row["Jumlah"],
+            "Harga": row["Harga"],
+            "Total": row["Total"]
+        })
 
 # =========================
 # DATA MENU
@@ -103,10 +113,6 @@ menu_tambahan = {
 }
 
 menu_minuman = {
-    "Air Es":3000,
-    "Air Hangat":3000,
-    "Es Teh":7000,
-    "Teh Hangat":7000,
     "Kelapa Muda Bijian":20000,
     "Es Tebu Lemon":20000,
     "Milky Strawberry":18000,
@@ -123,7 +129,13 @@ menu_minuman = {
     "Lemon Tea":12000,
     "Kunyit Asam":12000,
     "Black Coffee":10000,
-    "Lemonade":10000
+    "Lemonade":10000,
+    "Teh Hangat":7000,
+    "Es Teh":7000,
+    "Air Hangat":3000,
+    "Air Es":3000,
+    "Teh Es":7000,
+    "Air Mineral":7000
 }
 
 # =========================
@@ -221,15 +233,29 @@ if st.button("➕ Tambah Pesanan"):
             tambah(nampan, qty_nampan, menu_nampan_jumbo)
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
-        # Simpan live rekap ke Excel
-        rows_cart=[]
-        for n,items in st.session_state.cart.items():
-            for i in items:
-                rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
-        df_live = pd.DataFrame(rows_cart)
-        df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
-        st.session_state.df_live = df_live
-        df_live.to_excel(FILE,index=False,engine="openpyxl")
+# =========================
+# FUNGSI LOAD FILE
+# =========================
+def get_rekap_df():
+    if os.path.exists(FILE):
+        return pd.read_excel(FILE, engine='openpyxl')
+    else:
+        return pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
+
+df_file = get_rekap_df()
+
+# =========================
+# GABUNG DATA CART + FILE
+# =========================
+rows_cart=[]
+for n,items in st.session_state.cart.items():
+    for i in items:
+        rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+
+df_cart = pd.DataFrame(rows_cart)
+df_live = pd.concat([df_file, df_cart], ignore_index=True)
+df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
+st.session_state.df_live = df_live
 
 # =========================
 # LIVE REKAP 1 TABEL PER PEMESAN
@@ -259,6 +285,7 @@ if not df_live.empty:
             del st.session_state.cart[nama_hapus]
         st.session_state.df_live = df_live
         df_live.to_excel(FILE,index=False,engine="openpyxl")
+
 else:
     st.info("Belum ada pesanan.")
 
