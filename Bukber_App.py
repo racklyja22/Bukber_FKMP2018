@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-from streamlit_autorefresh import st_autorefresh
+from streamlit_autorefresh import st_autorefresh  # auto-refresh fix
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -98,12 +98,14 @@ menu_tambahan = {
     "Ekstra Kangkung Goreng":5000,
     "Ekstra Sambal":3000,
     "Ekstra Kerupuk":3000,
-    "Ekstra Acar":3000,
-    "Air Es / Hangat":3000,
-    "Teh Es / Hangat":7000
+    "Ekstra Acar":3000
 }
 
 menu_minuman = {
+    "Air Es":3000,
+    "Air Hangat":3000,
+    "Es Teh":7000,
+    "Teh Hangat":7000,
     "Kelapa Muda Bijian":20000,
     "Es Tebu Lemon":20000,
     "Milky Strawberry":18000,
@@ -120,9 +122,7 @@ menu_minuman = {
     "Lemon Tea":12000,
     "Kunyit Asam":12000,
     "Black Coffee":10000,
-    "Lemonade":10000,
-    "Teh Hangat":7000,
-    "Air Mineral":7000
+    "Lemonade":10000
 }
 
 # =========================
