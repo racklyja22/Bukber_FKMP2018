@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-from streamlit_autorefresh import st_autorefresh  # <<< tambahan fix auto-refresh
+from streamlit_autorefresh import st_autorefresh
+from filelock import FileLock  # untuk aman multi-user saat tulis Excel
 
 st.set_page_config(
     page_title="Bukber FKMP 2018",
@@ -13,20 +14,41 @@ st.set_page_config(
 # =========================
 # AUTO REFRESH (10 detik)
 # =========================
-st_autorefresh(interval=10000, key="live_rekap_refresh")  # <<< tambahan fix auto-refresh
+st_autorefresh(interval=10000, key="live_rekap_refresh")
 
 st.title("🍽️ BUKBER FKMP 2018")
 st.write("Silakan pilih menu yang ingin dipesan")
 
 FILE = "rekap_pesanan.xlsx"
+LOCK_FILE = "rekap_pesanan.lock"
 
 # =========================
 # SESSION CART
 # =========================
 if "cart" not in st.session_state:
-    st.session_state.cart = {}  # keyed by Nama
-if "refresh" not in st.session_state:
-    st.session_state.refresh = False
+    st.session_state.cart = {}
+
+# =========================
+# LOAD PESANAN LAMA DARI EXCEL KE SESSION_STATE CART
+# =========================
+def load_existing_orders():
+    if os.path.exists(FILE):
+        with FileLock(LOCK_FILE):
+            df_existing = pd.read_excel(FILE, engine='openpyxl')
+        temp_cart = {}
+        for idx, row in df_existing.iterrows():
+            nama_existing = row["Nama"]
+            if nama_existing not in temp_cart:
+                temp_cart[nama_existing] = []
+            temp_cart[nama_existing].append({
+                "Menu": row["Menu"],
+                "Jumlah": row["Jumlah"],
+                "Harga": row["Harga"],
+                "Total": row["Total"]
+            })
+        return temp_cart
+    else:
+        return {}
 
 # =========================
 # DATA MENU
@@ -117,6 +139,10 @@ menu_minuman = {
     "Black Coffee":10000,
     "Lemonade":10000,
     "Teh Hangat":7000,
+    "Es Teh":7000,
+    "Air Hangat":3000,
+    "Air Es":3000,
+    "Teh Es":7000,
     "Air Mineral":7000
 }
 
@@ -173,6 +199,8 @@ def tambah(menu, qty, daftar):
     if menu != "-" and qty > 0 and nama.strip():
         harga = daftar[menu]
         total = harga * qty
+        # load latest cart from Excel sebelum update
+        st.session_state.cart = load_existing_orders()
         if nama in st.session_state.cart:
             updated = False
             for item in st.session_state.cart[nama]:
@@ -195,6 +223,14 @@ def tambah(menu, qty, daftar):
                 "Harga": harga,
                 "Total": total
             }]
+        # tulis ke Excel dengan lock untuk multi-user
+        rows_cart=[]
+        for n,items in st.session_state.cart.items():
+            for i in items:
+                rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
+        df_live = pd.DataFrame(rows_cart)
+        with FileLock(LOCK_FILE):
+            df_live.to_excel(FILE,index=False,engine="openpyxl")
 
 # =========================
 # TOMBOL TAMBAH PESANAN
@@ -216,34 +252,21 @@ if st.button("➕ Tambah Pesanan"):
         st.success(f"Pesanan untuk {nama} ditambahkan ke keranjang!")
 
 # =========================
-# FUNGSI LOAD FILE
+# FUNGSI LOAD LIVE REKAP
 # =========================
-def get_rekap_df():
+def load_live_rekap():
     if os.path.exists(FILE):
-        return pd.read_excel(FILE, engine='openpyxl')
+        with FileLock(LOCK_FILE):
+            return pd.read_excel(FILE, engine='openpyxl')
     else:
         return pd.DataFrame(columns=["Nama","Menu","Jumlah","Harga","Total"])
 
-df_file = get_rekap_df()
-
-# =========================
-# GABUNG DATA CART + FILE
-# =========================
-rows_cart=[]
-for n,items in st.session_state.cart.items():
-    for i in items:
-        rows_cart.append({"Nama":n,"Menu":i["Menu"],"Jumlah":i["Jumlah"],"Harga":i["Harga"],"Total":i["Total"]})
-
-df_cart = pd.DataFrame(rows_cart)
-df_live = pd.concat([df_file, df_cart], ignore_index=True)
-df_live = df_live.groupby(["Nama","Menu","Harga"], as_index=False).agg({"Jumlah":"sum","Total":"sum"})
-st.session_state.df_live = df_live
+df_live = load_live_rekap()
 
 # =========================
 # LIVE REKAP 1 TABEL PER PEMESAN
 # =========================
 st.subheader("🧾 Rekap Pesanan Live")
-df_live = st.session_state.df_live
 if not df_live.empty:
     df_grouped = df_live.groupby("Nama").apply(
         lambda x: pd.Series({
@@ -261,12 +284,12 @@ if not df_live.empty:
             if st.button("🗑️ Hapus Pemesan", key=f"hapus_{row['Nama']}"):
                 hapus_list.append(row['Nama'])
 
-    for nama_hapus in hapus_list:
-        df_live = df_live[df_live["Nama"] != nama_hapus]
-        if nama_hapus in st.session_state.cart:
-            del st.session_state.cart[nama_hapus]
-        st.session_state.df_live = df_live
-        df_live.to_excel(FILE,index=False,engine="openpyxl")
+    if hapus_list:
+        for nama_hapus in hapus_list:
+            df_live = df_live[df_live["Nama"] != nama_hapus]
+        with FileLock(LOCK_FILE):
+            df_live.to_excel(FILE,index=False,engine="openpyxl")
+        st.experimental_rerun()
 
 else:
     st.info("Belum ada pesanan.")
