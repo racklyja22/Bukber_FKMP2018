@@ -290,12 +290,14 @@ else:
     st.info("Belum ada pesanan.")
 
 # =========================
-# TOMBOL DOWNLOAD EXCEL
+# TOMBOL DOWNLOAD EXCEL (Dari Live Rekap)
 # =========================
 st.subheader("⬇️ Download Rekap Pesanan")
-if not df_live.empty:
+if not st.session_state.df_live.empty:
     buffer = io.BytesIO()
-    df_live.to_excel(buffer,index=False,engine="openpyxl")
+    # Ambil data dari Live Rekap
+    df_to_download = st.session_state.df_live.copy()
+    df_to_download.to_excel(buffer,index=False,engine="openpyxl")
     buffer.seek(0)
     st.download_button(
         label="⬇️ Download Pesanan (.xlsx)",
